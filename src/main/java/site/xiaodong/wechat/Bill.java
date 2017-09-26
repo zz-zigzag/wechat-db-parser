@@ -36,8 +36,8 @@ public class Bill {
 		try {
 			getOption(args);
 			getConnect();
-//			getAllMemberList();
-			getChatroomMemberList();
+			getAllMemberList();
+			// getChatroomMemberList();
 			getSum();
 			output();
 		} catch (Exception e) {
@@ -48,12 +48,15 @@ public class Bill {
 
 	private static void output() {
 		for (int i = 0; i < sumList.size(); ++i) {
-			System.out.println(nameList.get(i) + "\t" + sumList.get(i));
+			if (Double.parseDouble(sumList.get(i).toString()) > 0) {
+				System.out.println(nameList.get(i) + "\t" + sumList.get(i));
+			}
 		}
 	}
 
 	/**
 	 * 统计
+	 * 
 	 * @throws Exception
 	 */
 	private static void getSum() throws Exception {
@@ -72,23 +75,24 @@ public class Bill {
 			if (!m.matches(Util.messageRegex)) {
 				continue;
 			}
-			System.out.println(m);
 			String wxid, valueStr;
 			int index;
 			if (m.indexOf(":") != -1) {
 				wxid = m.substring(0, m.indexOf(":"));
-				valueStr = m.substring(m.indexOf(":") + 2, m.length());
+				valueStr = m.substring(m.indexOf(":") + 2, m.length()).trim();
 				index = nameIndex.get(wxid);
 			} else {
 				index = myselfId;
 				valueStr = m;
 			}
-			sumList.set(index, sumList.get(index).add(new BigDecimal(valueStr)));
+			BigDecimal a = sumList.get(index).add(new BigDecimal(valueStr));
+			sumList.set(index, a);
 		}
 	}
 
 	/**
 	 * 获取所有通讯录名单
+	 * 
 	 * @throws Exception
 	 */
 	private static void getAllMemberList() throws Exception {
@@ -109,6 +113,7 @@ public class Bill {
 
 	/**
 	 * 获取群聊通讯录名单
+	 * 
 	 * @throws Exception
 	 */
 	private static void getChatroomMemberList() throws Exception {
@@ -118,7 +123,7 @@ public class Bill {
 		ps.setString(1, chatroom);
 		rs = ps.executeQuery();
 		String memberlist = null;
-		if(rs.next()) {
+		if (rs.next()) {
 			memberlist = rs.getString(1);
 		} else {
 			System.out.println(chatroom + " not found");
