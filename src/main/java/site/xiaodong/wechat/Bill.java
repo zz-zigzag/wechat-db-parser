@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,6 +24,9 @@ public class Bill {
 	private static String start;
 	private static String end;
 	private static String myself;
+	private static boolean deleted;
+	private static boolean someoneDeleted;
+
 	private static int myselfId;
 	private static Connection conn;
 	private static PreparedStatement ps;
@@ -30,19 +34,30 @@ public class Bill {
 
 	private static List<String> nameList = new ArrayList<String>();
 	private static List<BigDecimal> sumList = new ArrayList<BigDecimal>();
-	private static Map<String, Integer> nameIndex = new HashMap<String, Integer>();
+	private static Map<String, Integer> wxidIndex = new HashMap<String, Integer>();
 
 	public static void main(String[] args) {
 		try {
 			getOption(args);
 			getConnect();
-			getAllMemberList();
-			// getChatroomMemberList();
+			if (deleted) {
+				getAllMemberList();
+			} else {
+				getChatroomMemberList();
+			}
 			getSum();
 			output();
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.exit(0);
+		} finally {
+			try {
+				rs.close();
+				ps.close();
+				conn.close();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
 		}
 	}
 
@@ -50,6 +65,9 @@ public class Bill {
 		for (int i = 0; i < sumList.size(); ++i) {
 			if (Double.parseDouble(sumList.get(i).toString()) > 0) {
 				System.out.println(nameList.get(i) + "\t" + sumList.get(i));
+				if (someoneDeleted) {
+					System.out.println("someone deleted may not be process, you can run with -d to include it.");
+				}
 			}
 		}
 	}
@@ -80,7 +98,15 @@ public class Bill {
 			if (m.indexOf(":") != -1) {
 				wxid = m.substring(0, m.indexOf(":"));
 				valueStr = m.substring(m.indexOf(":") + 2, m.length()).trim();
-				index = nameIndex.get(wxid);
+
+				// member list have no this wxid
+				if (!wxidIndex.containsKey(wxid)) {
+					if (!someoneDeleted)
+						someoneDeleted = true;
+					continue;
+				}
+				index = wxidIndex.get(wxid);
+
 			} else {
 				index = myselfId;
 				valueStr = m;
@@ -91,19 +117,24 @@ public class Bill {
 	}
 
 	/**
-	 * 获取所有通讯录名单
+	 * 获取所有通讯录名单 为了应对，
 	 * 
 	 * @throws Exception
 	 */
 	private static void getAllMemberList() throws Exception {
 		ps = conn.prepareStatement("select username, conRemark, nickname from rcontact ");
 		rs = ps.executeQuery();
+		pasperMemerList(rs);
+
+	}
+
+	private static void pasperMemerList(ResultSet rs) throws SQLException {
 		int i = 0;
 		while (rs.next()) {
 			String name = (rs.getString(2).equals("") ? rs.getString(3) : rs.getString(2));
 			nameList.add(name);
 			sumList.add(new BigDecimal(0));
-			nameIndex.put(rs.getString(1), i);
+			wxidIndex.put(rs.getString(1), i);
 			if (name.equals(myself)) {
 				myselfId = i;
 			}
@@ -134,17 +165,7 @@ public class Bill {
 		ps = conn.prepareStatement(
 				"select username, conRemark, nickname from rcontact where username in ('" + memberlist + "')");
 		rs = ps.executeQuery();
-		int i = 0;
-		while (rs.next()) {
-			String name = (rs.getString(2).equals("") ? rs.getString(3) : rs.getString(2));
-			nameList.add(name);
-			sumList.add(new BigDecimal(0));
-			nameIndex.put(rs.getString(1), i);
-			if (name.equals(myself)) {
-				myselfId = i;
-			}
-			i++;
-		}
+		pasperMemerList(rs);
 	}
 
 	private static void getConnect() throws Exception {
@@ -159,8 +180,9 @@ public class Bill {
 		options.addOption("f", "file", true, "path of wechat database file");
 		options.addOption("c", "chatname", true, "chatroom name");
 		options.addOption("m", "myname", true, "my name");
-		options.addOption("s", "start", true, "start date eg. 2017-01");
-		options.addOption("e", "end", true, "chatroom name eg. 2017-01");
+		options.addOption("s", "start", true, "start date eg. 2017-01-01");
+		options.addOption("e", "end", true, "chatroom name eg. 2017-01-01");
+		options.addOption("d", "deleted-members", false, "parser contains deleted members");
 
 		CommandLineParser parser = new BasicParser();
 		CommandLine commandLine;
@@ -191,6 +213,7 @@ public class Bill {
 				Usage(options);
 			}
 			end += " 00:00:00";
+			deleted = commandLine.hasOption('d');
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.exit(0);
