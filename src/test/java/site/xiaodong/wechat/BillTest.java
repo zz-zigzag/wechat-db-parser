@@ -8,7 +8,7 @@ public class BillTest {
 	@Test
 	public void testHelp() {
 		String args[] = { "-f", "EnMicroMsg.db", "-m", "张晓东", "-c", "没坏账饭友群", "-s", "2017-05-01", "-e",
-				"2017-10-01" };
+				"2017-10-01", "-d" };
 		Bill.main(args);
 	}
 

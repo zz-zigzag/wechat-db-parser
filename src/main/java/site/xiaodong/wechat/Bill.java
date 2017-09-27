@@ -65,11 +65,11 @@ public class Bill {
 		for (int i = 0; i < sumList.size(); ++i) {
 			if (Double.parseDouble(sumList.get(i).toString()) > 0) {
 				System.out.println(nameList.get(i) + "\t" + sumList.get(i));
-				if (someoneDeleted) {
-					System.out.println("someone deleted may not be process, you can run with -d to include it.");
-				}
+
 			}
 		}
+		if (someoneDeleted)
+			System.out.println("someone deleted may not be process, you can run with -d to include it.");
 	}
 
 	/**
