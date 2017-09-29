@@ -1,11 +1,11 @@
 package site.xiaodong.wechat;
 
+import java.io.FileWriter;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,11 +23,11 @@ public class Bill {
 	private static String chatroom;
 	private static String start;
 	private static String end;
-	private static String myself;
+	private static String myWxid;
 	private static boolean deleted;
 	private static boolean someoneDeleted;
+	private static String detailFile;
 
-	private static int myselfId;
 	private static Connection conn;
 	private static PreparedStatement ps;
 	private static ResultSet rs;
@@ -35,11 +35,13 @@ public class Bill {
 	private static List<String> nameList = new ArrayList<String>();
 	private static List<BigDecimal> sumList = new ArrayList<BigDecimal>();
 	private static Map<String, Integer> wxidIndex = new HashMap<String, Integer>();
+	private static List<List<BigDecimal>> detailList = new ArrayList<List<BigDecimal>>();
 
 	public static void main(String[] args) {
 		try {
 			getOption(args);
 			getConnect();
+			getMyWxid();
 			if (deleted) {
 				getAllMemberList();
 			} else {
@@ -47,6 +49,9 @@ public class Bill {
 			}
 			getSum();
 			output();
+			if (detailFile != null) {
+				outputDetail();
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.exit(0);
@@ -55,10 +60,25 @@ public class Bill {
 				rs.close();
 				ps.close();
 				conn.close();
-			} catch (SQLException e) {
+			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
+	}
+
+	private static void outputDetail() throws Exception {
+		FileWriter fw = new FileWriter(detailFile);
+		for (int i = 0; i < sumList.size(); ++i) {
+			if (Double.parseDouble(sumList.get(i).toString()) == 0 && deleted) {
+				continue;
+			}
+			fw.write(nameList.get(i));
+			for (int j = 0; j < detailList.get(i).size(); j++) {
+				fw.write("\t" + detailList.get(i).get(j));
+			}
+			fw.write("\r\n");
+		}
+		fw.close();
 	}
 
 	private static void output() {
@@ -68,8 +88,9 @@ public class Bill {
 			}
 			System.out.println(nameList.get(i) + "\t" + sumList.get(i));
 		}
-		if (someoneDeleted)
+		if (someoneDeleted) {
 			System.out.println("someone deleted may not be process, you can run with -d to include it.");
+		}
 	}
 
 	/**
@@ -81,21 +102,23 @@ public class Bill {
 		Timestamp startDate, endDate;
 		startDate = Timestamp.valueOf(start);
 		endDate = Timestamp.valueOf(end);
-		ps = conn.prepareStatement("select m.content from message m join chatroom c on m.talker = c.chatroomname "
-				+ "left join rcontact r on r.username = c.chatroomname "
-				+ "where r.nickname = ? and m.createTime > ? and m.createTime < ? ");
+		ps = conn.prepareStatement(
+				"select m.content, m.isSend from message m join chatroom c on m.talker = c.chatroomname "
+						+ "left join rcontact r on r.username = c.chatroomname "
+						+ "where r.nickname = ? and m.createTime > ? and m.createTime < ? ");
 		ps.setString(1, chatroom);
 		ps.setLong(2, startDate.getTime());
 		ps.setLong(3, endDate.getTime());
 		rs = ps.executeQuery();
 		while (rs.next()) {
 			String m = rs.getString(1);
+			int isSend = rs.getInt(2);
 			if (!m.matches(Util.messageRegex)) {
 				continue;
 			}
 			String wxid, valueStr;
 			int index;
-			if (m.indexOf(":") != -1) {
+			if (isSend == 0) {
 				wxid = m.substring(0, m.indexOf(":"));
 				valueStr = m.substring(m.indexOf(":") + 2, m.length()).trim();
 
@@ -105,14 +128,14 @@ public class Bill {
 						someoneDeleted = true;
 					continue;
 				}
-				index = wxidIndex.get(wxid);
-
 			} else {
-				index = myselfId;
+				wxid = myWxid;
 				valueStr = m;
 			}
+			index = wxidIndex.get(wxid);
 			BigDecimal a = sumList.get(index).add(new BigDecimal(valueStr));
 			sumList.set(index, a);
+			detailList.get(index).add(a);
 		}
 	}
 
@@ -125,19 +148,16 @@ public class Bill {
 		ps = conn.prepareStatement("select username, conRemark, nickname from rcontact ");
 		rs = ps.executeQuery();
 		pasperMemerList(rs);
-
 	}
 
-	private static void pasperMemerList(ResultSet rs) throws SQLException {
+	private static void pasperMemerList(ResultSet rs) throws Exception {
 		int i = 0;
 		while (rs.next()) {
 			String name = (rs.getString(2).equals("") ? rs.getString(3) : rs.getString(2));
 			nameList.add(name);
 			sumList.add(new BigDecimal(0));
+			detailList.add(new ArrayList<BigDecimal>());
 			wxidIndex.put(rs.getString(1), i);
-			if (name.equals(myself)) {
-				myselfId = i;
-			}
 			i++;
 		}
 	}
@@ -157,7 +177,7 @@ public class Bill {
 		if (rs.next()) {
 			memberlist = rs.getString(1);
 		} else {
-			System.out.println(chatroom + " not found");
+			System.out.println(chatroom + " can not found");
 			System.exit(0);
 		}
 		memberlist = memberlist.replaceAll(";", "','");
@@ -166,6 +186,22 @@ public class Bill {
 				"select username, conRemark, nickname from rcontact where username in ('" + memberlist + "')");
 		rs = ps.executeQuery();
 		pasperMemerList(rs);
+	}
+
+	/**
+	 * 获取我自己的wxid
+	 * 
+	 * @throws Exception
+	 */
+	private static void getMyWxid() throws Exception {
+		ps = conn.prepareStatement("select value from userinfo where id= 2");
+		rs = ps.executeQuery();
+		if (rs.next()) {
+			myWxid = rs.getString(1);
+		} else {
+			System.out.println("my wechat id can not found");
+			System.exit(0);
+		}
 	}
 
 	private static void getConnect() throws Exception {
@@ -177,12 +213,12 @@ public class Bill {
 	private static void getOption(String[] args) {
 		Options options = new Options();
 		options.addOption("h", "help", false, "print this usage information");
-		options.addOption("f", "file", true, "path of wechat database file");
+		options.addOption("f", "dbfile", true, "path of wechat database file");
 		options.addOption("c", "chatname", true, "chatroom name");
-		options.addOption("m", "myname", true, "my name");
 		options.addOption("s", "start", true, "start date eg. 2017-01-01");
 		options.addOption("e", "end", true, "chatroom name eg. 2017-01-01");
 		options.addOption("d", "deleted-members", false, "parser contains deleted members");
+		options.addOption("i", "infofile", true, "output detail info to the file");
 
 		CommandLineParser parser = new BasicParser();
 		CommandLine commandLine;
@@ -199,10 +235,6 @@ public class Bill {
 			if (Util.isBlank(chatroom)) {
 				Usage(options);
 			}
-			myself = commandLine.getOptionValue("m");
-			if (Util.isBlank(myself)) {
-				Usage(options);
-			}
 			start = commandLine.getOptionValue("s");
 			if (Util.isBlank(start) || !start.matches(Util.dateRegex)) {
 				Usage(options);
@@ -214,6 +246,8 @@ public class Bill {
 			}
 			end += " 00:00:00";
 			deleted = commandLine.hasOption('d');
+			detailFile = commandLine.getOptionValue("i");
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.exit(0);
