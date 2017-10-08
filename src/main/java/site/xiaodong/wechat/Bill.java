@@ -133,8 +133,8 @@ public class Bill {
 				valueStr = m;
 			}
 			index = wxidIndex.get(wxid);
-			BigDecimal a = sumList.get(index).add(new BigDecimal(valueStr));
-			sumList.set(index, a);
+			BigDecimal a = sumList.get(index);
+			sumList.set(index, a.add(new BigDecimal(valueStr)));
 			detailList.get(index).add(a);
 		}
 	}
